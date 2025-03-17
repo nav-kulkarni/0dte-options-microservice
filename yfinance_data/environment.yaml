@@ -1,0 +1,7 @@
+name: yfinance_env
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - yfinance==0.2.37
+  - pandas==2.2.1
