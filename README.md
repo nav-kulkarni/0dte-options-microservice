@@ -14,7 +14,7 @@ You MUST make a PR request to merge your changes onto `develop`
 
 Creating a pipeline to pull data from yfinance every hour, and store data in Azure blob. 
 
-# 1.1 Testing Yfinance Data Collection
+### 1.1 Testing Yfinance Data Collection
 
 Fetches options data and open interest for a given stock ticker using the `yfinance` library structured in a `pandas` data frame. To use, navigate to *yfinance_data* directory and install dependencies from .yaml file. Run python3 fetch_options_data.py, and the head of the dataframe will appear for your chosen ticker.
 
