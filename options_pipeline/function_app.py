@@ -6,13 +6,20 @@ import pandas as pd
 import os
 from io import StringIO
 from dotenv import load_dotenv, find_dotenv
-from datetime import datetime
 from utils import fetch_options_data, format_timestamp
 
 # TODO:
-# 1. Set up connections string and test code
-# 2. Import fetch_options_data function(copied it for now)
-# 3. Test and check logs
+# 1. Test code for CRON job for 5 min interval
+# 2. 3/29/2025 - could not get cron job to work
+# --> Potential issues: 
+# Python version for functions is 3.10 but I am using 3.12 for enviorment?
+# Something to do with apple silicon versus other architecture - o3 mini mentioned this
+
+# ADDED:
+# 1. Add logging and basic error handling
+# 2. Seperated utils file from functions app for better organization
+# 3. Setup connection string 
+
 
 load_dotenv(find_dotenv())
 
