@@ -10,7 +10,6 @@ def fetch_options_data(ticker_symbol):
 
     for exp_date in ticker.options:
         opt_chain = ticker.option_chain(exp_date)
-        
         # Add calls
         calls_df = opt_chain.calls[["strike", "openInterest"]].copy()
         calls_df["expiration_date"] = exp_date
@@ -29,9 +28,9 @@ def fetch_options_data(ticker_symbol):
     return options_data
 
 def main():
-    ticker_symbol = "AAPL"  # Modify as needed--example stock
+    ticker_symbol = "SPY"  # Modify as needed--example stock
     df = fetch_options_data(ticker_symbol)
-    print(df.head())  # Display to test
+    print(df)  # Display to test
 
 if __name__ == "__main__":
     main() 

@@ -63,21 +63,16 @@ def validate_options_data(df: pd.DataFrame) -> bool:
 
 def fetch_0dte_options_data(ticker_symbol: str) -> Optional[pd.DataFrame]:
     """
-    Fetch 0DTE options data for a given ticker symbol.
+    Fetch options data for a given ticker symbol.
     
     Args:
         ticker_symbol (str): The ticker symbol to fetch options data for
         
     Returns:
-        Optional[pd.DataFrame]: DataFrame containing 0DTE options data or None if fetch fails
+        Optional[pd.DataFrame]: DataFrame containing options data or None if fetch fails
     """
     try:
-        # Check if it's collection time
-        if not is_collection_time():
-            logging.info(f"Not collection time, skipping data fetch for {ticker_symbol}")
-            return None
-        
-        logging.info(f"Fetching 0DTE options data for {ticker_symbol}")
+        logging.info(f"Fetching options data for {ticker_symbol}")
         ticker = yf.Ticker(ticker_symbol)
         
         # Get current stock price
@@ -91,10 +86,10 @@ def fetch_0dte_options_data(ticker_symbol: str) -> Optional[pd.DataFrame]:
             logging.error(f"No options available for {ticker_symbol}")
             return None
         
-        # Filter for 0DTE options (expiring today)
+        # Get option chain for today
         today_str = today.strftime("%Y-%m-%d")
         if today_str not in ticker.options:
-            logging.info(f"No 0DTE options available for {ticker_symbol}")
+            logging.info(f"No options available for expiration date {today_str}")
             return None
         
         # Get option chain for today
@@ -122,7 +117,7 @@ def fetch_0dte_options_data(ticker_symbol: str) -> Optional[pd.DataFrame]:
             options_list.append(puts_df)
         
         if not options_list:
-            logging.error(f"No valid 0DTE options data found for {ticker_symbol}")
+            logging.error(f"No valid options data found for {ticker_symbol}")
             return None
         
         # Combine calls and puts
@@ -137,11 +132,11 @@ def fetch_0dte_options_data(ticker_symbol: str) -> Optional[pd.DataFrame]:
             logging.error(f"Data validation failed for {ticker_symbol}")
             return None
         
-        logging.info(f"Successfully fetched 0DTE options data for {ticker_symbol}")
+        logging.info(f"Successfully fetched options data for {ticker_symbol}")
         return options_data
         
     except Exception as e:
-        logging.error(f"Error fetching 0DTE options data for {ticker_symbol}: {str(e)}")
+        logging.error(f"Error fetching options data for {ticker_symbol}: {str(e)}")
         return None
 
 def calculate_options_greeks(df: pd.DataFrame) -> pd.DataFrame:
