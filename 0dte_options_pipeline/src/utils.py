@@ -3,15 +3,12 @@ import yfinance as yf
 from datetime import datetime, timedelta
 import logging
 from typing import Optional, List, Dict, Any
-import pytz
 from dotenv import load_dotenv
 import os
 
 # Load environment variables
 load_dotenv()
 
-# Get collection time setting
-COLLECTION_TIME = os.getenv('COLLECTION_TIME', '11:30')
 
 def format_timestamp(dt: datetime = None) -> str:
     """Format datetime to string in a consistent format."""
@@ -19,30 +16,6 @@ def format_timestamp(dt: datetime = None) -> str:
         dt = datetime.now()
     return dt.strftime("%Y-%m-%d %H:%M:%S")
 
-def is_collection_time() -> bool:
-    """
-    Check if the current time is the collection time (11:30 AM ET).
-    
-    Returns:
-        bool: True if it's collection time, False otherwise
-    """
-    # Get current time in Eastern Time
-    et_tz = pytz.timezone('US/Eastern')
-    current_time_et = datetime.now(et_tz)
-    
-    # Check if it's a weekday
-    if current_time_et.weekday() >= 5:  # 5 = Saturday, 6 = Sunday
-        return False
-    
-    # Parse collection time
-    hour, minute = map(int, COLLECTION_TIME.split(':'))
-    
-    # Create datetime object for collection time
-    collection_time = current_time_et.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    
-    # Check if current time is within 5 minutes of collection time
-    time_diff = abs((current_time_et - collection_time).total_seconds() / 60)
-    return time_diff <= 5
 
 def validate_options_data(df: pd.DataFrame) -> bool:
     """Validate the structure and content of options data DataFrame."""
@@ -61,60 +34,80 @@ def validate_options_data(df: pd.DataFrame) -> bool:
     
     return True
 
-def fetch_0dte_options_data(ticker_symbol: str) -> Optional[pd.DataFrame]:
+def fetch_options_data(ticker_symbol: str) -> Optional[pd.DataFrame]:
     """
-    Fetch options data for a given ticker symbol.
+    Fetches options data for a given ticker that is most relevant for same-day trading.
+    Preferences:
+      - Use options expiring today (0DTE) if available.
+      - If not, use the nearest future expiration date.
+    Additional metadata (timestamp and current stock price) are added.
     
     Args:
-        ticker_symbol (str): The ticker symbol to fetch options data for
-        
+        ticker_symbol (str): Stock ticker to fetch options data for.
+    
     Returns:
-        Optional[pd.DataFrame]: DataFrame containing options data or None if fetch fails
+        Optional[pd.DataFrame]: DataFrame containing the relevant options data,
+                                or None if data collection fails.
     """
     try:
-        logging.info(f"Fetching options data for {ticker_symbol}")
+        logging.info(f"Fetching options data for same-day trading for {ticker_symbol}")
         ticker = yf.Ticker(ticker_symbol)
         
-        # Get current stock price
-        current_price = ticker.history(period="1d")['Close'].iloc[-1]
+        # Retrieve current stock price
+        hist = ticker.history(period="1d")
+        if hist.empty or "Close" not in hist.columns:
+            logging.error(f"No valid closing price data for {ticker_symbol}")
+            return None
+        current_price = hist["Close"].iloc[-1]
         
-        # Get today's date
+        # Determine today's date
         today = datetime.now().date()
+        today_str = today.strftime("%Y-%m-%d")
         
-        # Get options expiration dates
+        # Ensure options exist
         if not ticker.options:
             logging.error(f"No options available for {ticker_symbol}")
             return None
         
-        # Get option chain for today
-        today_str = today.strftime("%Y-%m-%d")
-        if today_str not in ticker.options:
-            logging.info(f"No options available for expiration date {today_str}")
-            return None
+        # Determine the relevant expiration date
+        if today_str in ticker.options:
+            relevant_exp_date = today_str
+            logging.info(f"Using 0DTE options expiring on {today_str}")
+        else:
+            # Get future expirations (those after today)
+            future_expiries = [exp for exp in ticker.options 
+                               if datetime.strptime(exp, "%Y-%m-%d").date() > today]
+            if not future_expiries:
+                logging.error("No future expiration dates found.")
+                return None
+            # Choose the earliest available expiration date
+            relevant_exp_date = min(future_expiries, key=lambda d: datetime.strptime(d, "%Y-%m-%d").date())
+            logging.info(f"0DTE not available. Using nearest expiration: {relevant_exp_date}")
         
-        # Get option chain for today
-        opt_chain = ticker.option_chain(today_str)
-        
-        # Validate option chain data
+        # Retrieve option chain data for the chosen expiration date
+        opt_chain = ticker.option_chain(relevant_exp_date)
         if opt_chain.calls.empty and opt_chain.puts.empty:
-            logging.warning(f"No options data for expiration date {today_str}")
+            logging.warning(f"Option chain is empty for expiration date {relevant_exp_date}")
             return None
         
         options_list = []
-        
-        # Process calls
-        if not opt_chain.calls.empty:
+        # Process calls (check for required columns first)
+        if not opt_chain.calls.empty and all(col in opt_chain.calls.columns for col in ["strike", "openInterest"]):
             calls_df = opt_chain.calls[["strike", "openInterest"]].copy()
-            calls_df["expiration_date"] = today_str
+            calls_df["expiration_date"] = relevant_exp_date
             calls_df["type"] = "call"
             options_list.append(calls_df)
-        
-        # Process puts
-        if not opt_chain.puts.empty:
+        else:
+            logging.warning("Calls data is missing required columns.")
+            
+        # Process puts similarly
+        if not opt_chain.puts.empty and all(col in opt_chain.puts.columns for col in ["strike", "openInterest"]):
             puts_df = opt_chain.puts[["strike", "openInterest"]].copy()
-            puts_df["expiration_date"] = today_str
+            puts_df["expiration_date"] = relevant_exp_date
             puts_df["type"] = "put"
             options_list.append(puts_df)
+        else:
+            logging.warning("Puts data is missing required columns.")
         
         if not options_list:
             logging.error(f"No valid options data found for {ticker_symbol}")
@@ -123,40 +116,33 @@ def fetch_0dte_options_data(ticker_symbol: str) -> Optional[pd.DataFrame]:
         # Combine calls and puts
         options_data = pd.concat(options_list, ignore_index=True)
         
-        # Add timestamp and stock price
+        # Add ticker column
+        options_data['ticker'] = ticker_symbol
+        
+        # Ensure column names match database schema
+        options_data = options_data.rename(columns={
+            'type': 'option_type',
+            'openInterest': 'open_interest'
+        })
+        
+        # Set timestamp
         options_data['timestamp'] = format_timestamp()
+        
+        # Convert expiration_date to datetime if it's a string
+        options_data['expiration_date'] = pd.to_datetime(options_data['expiration_date'])
+        
+        # Add stock price
         options_data['stock_price'] = current_price
         
-        # Validate data
+        # Validate the data structure
         if not validate_options_data(options_data):
             logging.error(f"Data validation failed for {ticker_symbol}")
             return None
         
-        logging.info(f"Successfully fetched options data for {ticker_symbol}")
         return options_data
         
     except Exception as e:
-        logging.error(f"Error fetching options data for {ticker_symbol}: {str(e)}")
+        logging.exception(f"Error fetching options data for {ticker_symbol}")
         return None
 
-def calculate_options_greeks(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Calculate option Greeks (Delta, Gamma, Theta) for options data.
-    
-    Args:
-        df (pd.DataFrame): DataFrame containing options data
-        
-    Returns:
-        pd.DataFrame: DataFrame with added Greeks columns
-    """
-    # This is a placeholder for the Greeks calculation
-    # In a real implementation, you would use the Black-Scholes model
-    # to calculate the Greeks based on the option price, strike, etc.
-    
-    # For now, we'll just add placeholder columns
-    df['delta'] = None
-    df['gamma'] = None
-    df['theta'] = None
-    
-    return df
 

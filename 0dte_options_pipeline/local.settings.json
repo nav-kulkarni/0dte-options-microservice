@@ -1,15 +1,16 @@
 {
   "IsEncrypted": false,
   "Values": {
-    "FUNCTIONS_WORKER_RUNTIME": "python",
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "AZURE_POSTGRES_CONNECTION_STRING": "postgresql://username:password@server.postgres.database.azure.com:5432/database",
+    "TICKERS": "SPY,QQQ",
+    "LOG_LEVEL": "INFO",
+    "COLLECTION_TIME": "11:30",
     "PG_USER": "your_pg_user",
     "PG_PASSWORD": "your_pg_password",
     "PG_SERVER": "your_server_name.postgres.database.azure.com",
     "PG_PORT": "5432",
-    "PG_DATABASE": "your_database_name",
-    "TICKERS": "SPY,QQQ",
-    "LOG_LEVEL": "INFO",
-    "COLLECTION_TIME": "11:30"
+    "PG_DATABASE": "your_database_name"
   }
-} 
+}

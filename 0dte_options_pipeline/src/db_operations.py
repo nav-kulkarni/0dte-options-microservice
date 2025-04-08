@@ -5,26 +5,28 @@ import pandas as pd
 from sqlalchemy import create_engine, text, Table, Column, Integer, Float, String, DateTime, MetaData, Index, Boolean
 from sqlalchemy.exc import SQLAlchemyError
 from dotenv import load_dotenv
+import psycopg2
+from psycopg2.extras import execute_values
+from datetime import datetime
 
 # Load environment variables
 load_dotenv()
 
-# Database connection string
-DB_USER = os.getenv('PG_USER')
-DB_PASSWORD = os.getenv('PG_PASSWORD')
-DB_SERVER = os.getenv('PG_SERVER')
-DB_PORT = os.getenv('PG_PORT', '5432')
-DB_NAME = os.getenv('PG_DATABASE')
-
-DB_CONNECTION_STRING = f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_SERVER}:{DB_PORT}/{DB_NAME}"
+# Get database connection string from environment variable
+DB_CONNECTION_STRING = os.getenv('AZURE_POSTGRES_CONNECTION_STRING')
+if not DB_CONNECTION_STRING:
+    raise ValueError("Database connection string not found in environment variables")
 
 def get_db_engine():
     """Create and return a SQLAlchemy engine for Azure PostgreSQL."""
-    if not DB_CONNECTION_STRING:
-        raise ValueError("Database connection string not found in environment variables")
-    
     try:
-        engine = create_engine(DB_CONNECTION_STRING)
+        # Convert the connection string to SQLAlchemy format if needed
+        if DB_CONNECTION_STRING.startswith('postgresql://'):
+            sqlalchemy_conn_string = DB_CONNECTION_STRING.replace('postgresql://', 'postgresql+psycopg2://')
+        else:
+            sqlalchemy_conn_string = DB_CONNECTION_STRING
+            
+        engine = create_engine(sqlalchemy_conn_string)
         return engine
     except Exception as e:
         logging.error(f"Error creating database engine: {str(e)}")
@@ -36,6 +38,7 @@ def initialize_database():
     metadata = MetaData()
     
     # Define the options_data table
+    # This variable is used indirectly by metadata.create_all()
     options_data = Table(
         'options_data', 
         metadata,
@@ -47,11 +50,9 @@ def initialize_database():
         Column('option_type', String(4), nullable=False),  # 'call' or 'put'
         Column('stock_price', Float, nullable=False),
         Column('timestamp', DateTime, nullable=False),
-        Column('is_0dte', Boolean, nullable=False, default=True),
         Index('idx_ticker_exp_date', 'ticker', 'expiration_date'),
         Index('idx_timestamp', 'timestamp'),
-        Index('idx_strike', 'strike'),
-        Index('idx_is_0dte', 'is_0dte')
+        Index('idx_strike', 'strike')
     )
     
     try:
@@ -62,62 +63,109 @@ def initialize_database():
         logging.error(f"Error initializing database schema: {str(e)}")
         raise
 
-def save_options_data(df: pd.DataFrame, ticker: str):
+def get_db_connection():
+    """Create and return a database connection."""
+    try:
+        conn = psycopg2.connect(DB_CONNECTION_STRING)
+        return conn
+    except Exception as e:
+        logging.error(f"Error connecting to database: {str(e)}")
+        raise
+
+def save_options_data(data: pd.DataFrame, ticker: str):
     """
     Save options data to the database.
     
     Args:
-        df (pd.DataFrame): DataFrame containing options data
-        ticker (str): Ticker symbol
+        data (pd.DataFrame): DataFrame containing options data
+        ticker (str): Stock ticker symbol
     """
-    if df is None or df.empty:
-        logging.warning(f"No data to save for {ticker}")
+    if data is None or data.empty:
+        logging.warning("No data to save")
         return
     
-    engine = get_db_engine()
-    
-    # Add ticker column if not present
-    if 'ticker' not in df.columns:
-        df['ticker'] = ticker
-    
-    # Ensure column names match database schema
-    df = df.rename(columns={
-        'type': 'option_type',
-        'openInterest': 'open_interest'
-    })
-    
-    # Convert timestamp to datetime if it's a string
-    if 'timestamp' in df.columns and df['timestamp'].dtype == 'object':
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
-    
-    # Convert expiration_date to datetime if it's a string
-    if 'expiration_date' in df.columns and df['expiration_date'].dtype == 'object':
-        df['expiration_date'] = pd.to_datetime(df['expiration_date'])
-    
-    # Add is_0dte column
-    df['is_0dte'] = (df['expiration_date'].dt.date == pd.Timestamp.utcnow().date())
-    
+    conn = None
+    cur = None
     try:
-        # Save to database
-        df.to_sql('options_data', engine, if_exists='append', index=False, method='multi')
-        logging.info(f"Successfully saved {len(df)} rows for {ticker} to database")
-    except SQLAlchemyError as e:
-        logging.error(f"Error saving data to database: {str(e)}")
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Prepare data for insertion
+        timestamp = datetime.now()
+        records = []
+        for _, row in data.iterrows():
+            record = (
+                ticker,
+                row['strike'],
+                row['openInterest'],
+                row['expirationDate'],
+                row['optionType'],
+                row['stockPrice'],
+                timestamp
+            )
+            records.append(record)
+        
+        # Insert data using execute_values for better performance
+        insert_query = """
+            INSERT INTO options_data 
+            (ticker, strike, open_interest, expiration_date, option_type, stock_price, timestamp)
+            VALUES %s
+        """
+        execute_values(cur, insert_query, records)
+        
+        conn.commit()
+        logging.info(f"Successfully saved {len(records)} records for {ticker}")
+        
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logging.error(f"Error saving data: {str(e)}")
         raise
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
-def get_0dte_options_data(
-    ticker: str,
-    date: Optional[str] = None
-) -> pd.DataFrame:
+def get_latest_options_data(ticker: str, limit: int = 100):
     """
-    Retrieve 0DTE options data from the database for a specific date.
+    Retrieve the latest options data for a given ticker.
+    
+    Args:
+        ticker (str): Stock ticker symbol
+        limit (int): Maximum number of records to return
+        
+    Returns:
+        pd.DataFrame: DataFrame containing the latest options data
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        query = """
+            SELECT * FROM options_data 
+            WHERE ticker = %s 
+            ORDER BY timestamp DESC 
+            LIMIT %s
+        """
+        return pd.read_sql_query(query, conn, params=(ticker, limit))
+        
+    except Exception as e:
+        logging.error(f"Error retrieving data: {str(e)}")
+        raise
+    finally:
+        if conn:
+            conn.close()
+
+def get_options_data(ticker: str, date: Optional[str] = None) -> pd.DataFrame:
+    """
+    Retrieve options data from the database for a specific date.
     
     Args:
         ticker (str): Ticker symbol
         date (Optional[str]): Date to retrieve data for (YYYY-MM-DD)
         
     Returns:
-        pd.DataFrame: DataFrame containing 0DTE options data
+        pd.DataFrame: DataFrame containing options data
     """
     engine = get_db_engine()
     
@@ -125,7 +173,6 @@ def get_0dte_options_data(
     query = """
     SELECT * FROM options_data 
     WHERE ticker = :ticker 
-    AND is_0dte = TRUE
     """
     params = {"ticker": ticker}
     
@@ -140,43 +187,9 @@ def get_0dte_options_data(
         with engine.connect() as conn:
             result = pd.read_sql_query(text(query), conn, params=params)
         
-        logging.info(f"Retrieved {len(result)} rows of 0DTE data for {ticker} from database")
+        logging.info(f"Retrieved {len(result)} rows of options data for {ticker} from database")
         return result
     except SQLAlchemyError as e:
         logging.error(f"Error retrieving data from database: {str(e)}")
         raise
 
-def get_latest_0dte_options_data(ticker: str) -> pd.DataFrame:
-    """
-    Get the most recent 0DTE options data for a ticker.
-    
-    Args:
-        ticker (str): Ticker symbol
-        
-    Returns:
-        pd.DataFrame: DataFrame containing the latest 0DTE options data
-    """
-    engine = get_db_engine()
-    
-    query = """
-    SELECT * FROM options_data 
-    WHERE ticker = :ticker 
-    AND is_0dte = TRUE
-    AND timestamp = (
-        SELECT MAX(timestamp) 
-        FROM options_data 
-        WHERE ticker = :ticker
-        AND is_0dte = TRUE
-    )
-    ORDER BY strike
-    """
-    
-    try:
-        with engine.connect() as conn:
-            result = pd.read_sql_query(text(query), conn, params={"ticker": ticker})
-        
-        logging.info(f"Retrieved latest 0DTE data for {ticker} from database")
-        return result
-    except SQLAlchemyError as e:
-        logging.error(f"Error retrieving latest data from database: {str(e)}")
-        raise

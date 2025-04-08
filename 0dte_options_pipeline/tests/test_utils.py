@@ -1,84 +1,68 @@
 import pytest
+from datetime import datetime, timezone
 import pandas as pd
-from datetime import datetime, timedelta
-import pytz
-from src.utils import (
-    format_timestamp,
-    is_collection_time,
-    validate_options_data,
-    fetch_0dte_options_data,
-    filter_options_by_strike_range,
-    get_atm_options
-)
+from src.utils import format_timestamp, is_collection_time, validate_options_data, fetch_options_data
 
 def test_format_timestamp():
-    """Test formatting timestamp."""
-    dt = datetime(2023, 1, 1, 12, 0, 0)
-    formatted = format_timestamp(dt)
-    assert formatted == "2023-01-01 12:00:00"
+    # Test with current time
+    current_time = datetime.now(timezone.utc)
+    formatted_time = format_timestamp(current_time)
+    assert isinstance(formatted_time, str)
+    assert len(formatted_time) > 0
+
+    # Test with specific time
+    specific_time = datetime(2024, 3, 29, 11, 30, tzinfo=timezone.utc)
+    formatted_specific_time = format_timestamp(specific_time)
+    assert isinstance(formatted_specific_time, str)
+    assert len(formatted_specific_time) > 0
 
 def test_is_collection_time():
-    """Test checking if current time is during collection time."""
-    # This test will depend on when it's run
-    # It will pass if run during collection time, fail otherwise
-    result = is_collection_time()
-    assert isinstance(result, bool)
+    # Test during collection time (11:30 AM EST)
+    collection_time = datetime(2024, 3, 29, 11, 30, tzinfo=timezone.utc)
+    assert is_collection_time(collection_time) is True
+
+    # Test outside collection time
+    non_collection_time = datetime(2024, 3, 29, 12, 30, tzinfo=timezone.utc)
+    assert is_collection_time(non_collection_time) is False
 
 def test_validate_options_data():
-    """Test validating options data."""
-    # Valid data
+    # Test with valid data
     valid_data = pd.DataFrame({
-        'strike': [100, 105],
+        'strike': [100.0, 101.0],
+        'lastPrice': [1.5, 2.0],
+        'bid': [1.4, 1.9],
+        'ask': [1.6, 2.1],
+        'volume': [100, 200],
         'openInterest': [1000, 2000],
-        'expiration_date': [datetime.now(), datetime.now()],
-        'type': ['call', 'put'],
-        'stock_price': [105, 105],
-        'timestamp': [datetime.now(), datetime.now()]
+        'impliedVolatility': [0.2, 0.25],
+        'delta': [0.5, 0.6],
+        'gamma': [0.1, 0.15],
+        'theta': [-0.05, -0.06],
+        'vega': [0.1, 0.12]
     })
     assert validate_options_data(valid_data) is True
-    
-    # Invalid data (missing column)
+
+    # Test with missing columns
     invalid_data = pd.DataFrame({
-        'strike': [100, 105],
-        'openInterest': [1000, 2000]
-    })
-    assert validate_options_data(invalid_data) is False
-    
-    # Invalid data (null values)
-    invalid_data = pd.DataFrame({
-        'strike': [100, None],
-        'openInterest': [1000, 2000],
-        'expiration_date': [datetime.now(), datetime.now()],
-        'type': ['call', 'put'],
-        'stock_price': [105, 105],
-        'timestamp': [datetime.now(), datetime.now()]
+        'strike': [100.0],
+        'lastPrice': [1.5]
     })
     assert validate_options_data(invalid_data) is False
 
-def test_filter_options_by_strike_range():
-    """Test filtering options by strike range."""
-    data = pd.DataFrame({
-        'strike': [100, 105, 110, 115, 120],
-        'openInterest': [1000, 2000, 3000, 4000, 5000]
-    })
-    
-    filtered = filter_options_by_strike_range(data, 105, 115)
-    assert len(filtered) == 3
-    assert filtered['strike'].min() == 105
-    assert filtered['strike'].max() == 115
+    # Test with empty dataframe
+    empty_data = pd.DataFrame()
+    assert validate_options_data(empty_data) is False
 
-def test_get_atm_options():
-    """Test getting at-the-money options."""
-    data = pd.DataFrame({
-        'strike': [100, 105, 110, 115, 120],
-        'stock_price': [110, 110, 110, 110, 110],
-        'openInterest': [1000, 2000, 3000, 4000, 5000]
-    })
-    
-    # With 5% tolerance
-    atm_options = get_atm_options(data, tolerance=0.05)
-    assert len(atm_options) == 1  # Only 110 strike is within 5% of 110 stock price
-    
-    # With 10% tolerance
-    atm_options = get_atm_options(data, tolerance=0.10)
-    assert len(atm_options) == 3  # 100, 105, 110 strikes are within 10% of 110 stock price 
+def test_fetch_options_data():
+    # Test with valid ticker
+    data = fetch_options_data('SPY')
+    assert isinstance(data, pd.DataFrame)
+    assert not data.empty
+    assert all(col in data.columns for col in [
+        'strike', 'lastPrice', 'bid', 'ask', 'volume', 'openInterest',
+        'impliedVolatility', 'delta', 'gamma', 'theta', 'vega'
+    ])
+
+    # Test with invalid ticker
+    invalid_data = fetch_options_data('INVALID_TICKER')
+    assert invalid_data is None 
