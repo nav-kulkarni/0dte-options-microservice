@@ -97,10 +97,10 @@ def save_options_data(data: pd.DataFrame, ticker: str):
             record = (
                 ticker,
                 row['strike'],
-                row['openInterest'],
-                row['expirationDate'],
-                row['optionType'],
-                row['stockPrice'],
+                row['open_interest'],       # debug: updated column name to match
+                row['expiration_date'],     
+                row['option_type'],         
+                row['stock_price'],  
                 timestamp
             )
             records.append(record)
