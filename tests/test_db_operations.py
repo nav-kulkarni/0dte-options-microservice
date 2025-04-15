@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 import pandas as pd
 from datetime import datetime
-from src.db_operations import get_db_connection, save_options_data, get_latest_options_data
+from db_operations import get_db_connection, save_options_data, get_latest_options_data
 
 class TestDatabaseOperations(unittest.TestCase):
     def setUp(self):

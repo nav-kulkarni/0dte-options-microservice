@@ -12,7 +12,9 @@ load_dotenv()
 initialize_database()
 app = func.FunctionApp()
 
-@app.timer_trigger(schedule="0 30 10 * * 1-5", arg_name="myTimer", run_on_startup=True,
+logging.basicConfig(filename='function_app.log', level=logging.DEBUG)
+
+@app.timer_trigger(schedule="* * * * *", arg_name="myTimer", run_on_startup=True,
               use_monitor=False) 
 def options_weekday_trigger(myTimer: func.TimerRequest) -> None:
 
