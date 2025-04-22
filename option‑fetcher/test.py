@@ -29,7 +29,7 @@ def test_fetch():
         return
     assert isinstance(docs, list), "Expected a list of dicts"
     doc0 = docs[0]
-    required = {"ticker","expiration_date","option_type","strike","open_interest","stock_price","ts"}
+    required = {"ticker","expiration_date","option_type","strike","open_interest","ts"}
     missing = required - set(doc0.keys())
     if missing:
         print(f"Missing keys in first doc: {missing}")
@@ -51,9 +51,9 @@ def test_db_append_only():
     # Two dummy docs for TEST ticker
     docs = [
         {"ticker":"TEST","expiration_date":now,"option_type":"call","strike":1.0,
-         "open_interest":10,"stock_price":100.0,"ts":now},
+         "open_interest":10,"ts":now},
         {"ticker":"TEST","expiration_date":now,"option_type":"call","strike":2.0,
-         "open_interest":20,"stock_price":200.0,"ts":now}
+         "open_interest":20,"ts":now}
     ]
     # Clean slate
     coll.delete_many({"ticker":"TEST"})

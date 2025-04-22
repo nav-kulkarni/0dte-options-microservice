@@ -19,13 +19,6 @@ def fetch_options_data(ticker_symbol: str) -> Optional[List[dict]]:
         logging.info(f"Fetching options snapshot for {ticker_symbol}")
         ticker = yf.Ticker(ticker_symbol)
 
-        # Note: This can only be run when market open, else --> return's empty df
-        hist = ticker.history(period="1d")
-        if hist.empty or "Close" not in hist:
-            logging.error("No closing price for %s", ticker_symbol)
-            return None
-        stock_price = float(hist["Close"].iloc[-1])
-
         expirations = ticker.options
         if not expirations:
             logging.error("No expirations for %s", ticker_symbol)
@@ -74,7 +67,6 @@ def fetch_options_data(ticker_symbol: str) -> Optional[List[dict]]:
                         "ask":                 r.ask,
                         "last_price":          r.lastPrice,
                         "implied_volatility":  r.impliedVolatility,
-                        "stock_price":         stock_price,
                         "ts":                  now,
                         "time_to_expiry_days": tte_days
                     })
