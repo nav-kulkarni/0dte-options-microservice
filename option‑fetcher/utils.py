@@ -19,20 +19,19 @@ def fetch_options_data(ticker_symbol: str) -> Optional[List[dict]]:
         logging.info(f"Fetching options snapshot for {ticker_symbol}")
         ticker = yf.Ticker(ticker_symbol)
 
-        # 1) Underlying price
+        # Note: This can only be run when market open, else --> return's empty df
         hist = ticker.history(period="1d")
         if hist.empty or "Close" not in hist:
             logging.error("No closing price for %s", ticker_symbol)
             return None
         stock_price = float(hist["Close"].iloc[-1])
 
-        # 2) Expirations list
         expirations = ticker.options
         if not expirations:
             logging.error("No expirations for %s", ticker_symbol)
             return None
 
-        now = datetime.utcnow()
+        now = datetime.now()
         docs: List[dict] = []
 
         # 3) Iterate each expiration
@@ -89,3 +88,4 @@ def fetch_options_data(ticker_symbol: str) -> Optional[List[dict]]:
     except Exception:
         logging.exception("Fatal error fetching options for %s", ticker_symbol)
         return None
+

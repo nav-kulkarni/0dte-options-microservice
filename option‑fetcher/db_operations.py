@@ -13,8 +13,8 @@ if not MONGO_URI:
     raise ValueError("Missing MONGO_URI environment variable")
 
 client = MongoClient(MONGO_URI, maxPoolSize=50)
-db     = client.get_database(os.getenv("MONGO_DB", "options_db"))
-coll   = db.get_collection(os.getenv("MONGO_COLLECTION", "options_data"))
+db     = client.get_database(os.getenv("MONGO_DB"))
+coll   = db.get_collection(os.getenv("MONGO_COLLECTION"))
 
 def save_options_data(docs: list) -> None:
     """
