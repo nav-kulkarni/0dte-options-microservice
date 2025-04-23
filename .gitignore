@@ -1,8 +1,3 @@
-<<<<<<< HEAD
-.DS_Store
-.env
-local.settings.json
-=======
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -138,4 +133,6 @@ __blobstorage__
 __queuestorage__
 __azurite_db*__.json
 .python_packages
->>>>>>> dev
+
+# DS store
+.DS_Store
