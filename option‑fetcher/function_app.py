@@ -3,7 +3,6 @@ import datetime
 from datetime import timezone
 from utils import fetch_options_data
 from db_operations import save_options_data
-import json
 import os
 import logging
 
@@ -13,10 +12,11 @@ TICKERS = os.getenv("TICKERS", "")
 if not TICKERS:
     raise ValueError("Please set the TICKERS environment variable")
 
-logging.basicConfig(filename='function_app.log', level=logging.INFO)
+# logging.basicConfig(filename='function_app.log', level=logging.INFO)
 
-@app.timer_trigger(schedule="0 * * * * *", arg_name="myTimer", run_on_startup=False,
-              use_monitor=False) 
+# CRON runs 11am est on weekdays only
+@app.timer_trigger(schedule="0 0 15 * * 1-5", arg_name="myTimer", run_on_startup=True,
+              use_monitor=True) 
 def optionsweekday(myTimer: func.TimerRequest) -> None:
     
     if myTimer.past_due:
